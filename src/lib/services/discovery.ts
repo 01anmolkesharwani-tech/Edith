@@ -13,7 +13,7 @@ import { ProviderError } from "@/lib/providers/types";
 import { researchWebsite, WebsiteResearchError, type ResearchedPage } from "@/lib/providers/website";
 import { companiesById, companiesByIndustry, searchEntities, type WikidataCompany } from "@/lib/providers/wikidata";
 import { createContact, findContactDuplicates, recomputeContact } from "./contacts";
-import { linkCompany, upsertCompany } from "./companies";
+import { assertCompanyAccess, linkCompany, upsertCompany } from "./companies";
 import { NotFoundError, UserError } from "./errors";
 import { getSettings, userAgentFor } from "./settings";
 
@@ -193,6 +193,7 @@ export async function researchCompanyWebsite(
 ): Promise<WebsiteResearchSummary> {
   const settings = await getSettings();
   if (!settings.websiteResearchEnabled) throw new UserError("Website research is disabled in Settings.");
+  await assertCompanyAccess(profileId, companyId);
   const company = await db.company.findUnique({ where: { id: companyId } });
   if (!company) throw new NotFoundError("Company");
   if (!company.website) throw new UserError("Add the company's official website first.");
@@ -330,6 +331,7 @@ export async function researchSinglePage(
   deps: DiscoveryDeps = {},
 ) {
   const settings = await getSettings();
+  await assertCompanyAccess(profileId, companyId);
   const company = await db.company.findUnique({ where: { id: companyId } });
   if (!company) throw new NotFoundError("Company");
   let u: URL;
@@ -381,6 +383,7 @@ export async function researchSinglePage(
 export async function refreshCompanyJobs(profileId: string, companyId: string, deps: DiscoveryDeps = {}) {
   const settings = await getSettings();
   if (!settings.jobBoardsEnabled) throw new UserError("Job-board lookups are disabled in Settings.");
+  await assertCompanyAccess(profileId, companyId);
   const company = await db.company.findUnique({ where: { id: companyId } });
   if (!company) throw new NotFoundError("Company");
   if (!company.atsProvider || !company.atsSlug) {

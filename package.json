@@ -18,7 +18,8 @@
     "db:backup": "tsx scripts/backup.ts",
     "db:restore": "tsx scripts/restore.ts",
     "setup": "prisma migrate deploy && prisma generate && tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:e2e": "tsx scripts/e2e-smoke.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",
@@ -47,9 +48,12 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/smtp-server": "^3.5.13",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "playwright": "^1.64.0",
     "prisma": "^7.10.0",
+    "smtp-server": "^3.19.21",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",

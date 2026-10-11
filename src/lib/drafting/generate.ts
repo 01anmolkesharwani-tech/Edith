@@ -97,6 +97,10 @@ function greeting(recipient: GenerationInput["recipient"]): string {
 
 const INITIATIVE_KINDS = ["GROWTH_INITIATIVE", "STRATEGIC_PRIORITY", "PRODUCT_OR_SERVICE", "BUSINESS_UNIT", "NEWS", "BUSINESS_MODEL", "DESCRIPTION"];
 
+export function possessive(name: string): string {
+  return /s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`;
+}
+
 function lowerFirst(s: string): string {
   return /^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s;
 }
@@ -174,6 +178,7 @@ export function generateDraft(input: GenerationInput): GeneratedDraft {
     },
     company: {
       name: input.company?.name ?? "your organisation",
+      possessive: input.company ? possessive(input.company.name) : "your organisation's",
       initiative: initiative ? lowerFirst(stripEndPunct(initiative.statement)) : null,
       initiativeSource: null,
     },

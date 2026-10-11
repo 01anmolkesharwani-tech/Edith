@@ -23,7 +23,6 @@ export interface ExtractedPage {
 }
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}/g;
-const PHONE_RE = /(?:\+\d{1,3}[\s.-]?)?(?:\(\d{1,5}\)[\s.-]?)?\d{2,5}(?:[\s.-]?\d{2,5}){2,4}/g;
 
 function clean(s: string): string {
   return s.replace(/\s+/g, " ").trim();

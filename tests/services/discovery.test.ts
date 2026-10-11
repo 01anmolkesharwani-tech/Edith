@@ -103,11 +103,19 @@ describe("official website discovery", () => {
 
   it("an unreachable site fails gracefully and is logged", async () => {
     const company = await upsertCompany({ name: "Down Co", website: "https://down.test/" });
+    await linkCompany(w.marketing.id, company.id, "TARGET");
     const { fetcher } = fixtureFetcher({ "https://down.test/robots.txt": { status: 404, body: "" } });
     await expect(researchCompanyWebsite(w.marketing.id, company.id, { fetcher, throttle: noWait })).rejects.toThrow(/Homepage could not be retrieved/);
     const h = await db.searchHistory.findFirstOrThrow({ where: { profileId: w.marketing.id, status: "ERROR" }, orderBy: { createdAt: "desc" } });
     expect(h.errorMessage).toMatch(/HTTP 404/);
   });
+});
+
+it("a profile cannot research a company it does not track", async () => {
+  const company = await upsertCompany({ name: "Untracked Co", website: "https://untracked.test/" });
+  const { fetcher, calls } = fixtureFetcher({});
+  await expect(researchCompanyWebsite(w.finance.id, company.id, { fetcher, throttle: noWait })).rejects.toThrow(/not found/i);
+  expect(calls).toHaveLength(0);
 });
 
 describe("company discovery via Wikidata", () => {

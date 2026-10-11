@@ -47,13 +47,13 @@ ${SIGNOFF}`,
     name: "Functional leader – contribution",
     recipientType: "FUNCTIONAL_LEADER",
     subjects: [
-      "Exploring a potential contribution to {{company.name}}'s {{function.label}} team",
+      "Exploring a potential contribution to {{company.possessive}} {{function.label}} team",
       "Interested in your {{function.label}} team | {{candidate.name}}",
       "{{candidate.name}} – {{function.title}} at {{company.name}}",
     ],
     body: `{{greeting}}
 
-${INTRO} I am reaching out because I am interested in contributing to {{company.name}}'s {{function.label}} work{{#recipient.title}}, which I understand falls within your remit as {{recipient.title}}{{/recipient.title}}.
+${INTRO} I am reaching out because I am interested in contributing to {{company.possessive}} {{function.label}} work{{#recipient.title}}, which I understand falls within your remit as {{recipient.title}}{{/recipient.title}}.
 
 ${COMPANY_HOOK}{{#recipient.background}} I was also interested in your work on {{recipient.background}}.{{/recipient.background}}
 

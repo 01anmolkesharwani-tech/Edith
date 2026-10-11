@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { normalizeUrl } from "@/lib/normalize";
+import { assertCompanyAccess } from "./companies";
 import { NotFoundError, UserError } from "./errors";
 
 export const RESEARCH_KINDS = [
@@ -28,8 +29,7 @@ export const researchSchema = z.object({
 
 export async function addResearchItem(profileId: string, companyId: string, input: z.input<typeof researchSchema>) {
   const d = researchSchema.parse(input);
-  const company = await db.company.findUnique({ where: { id: companyId } });
-  if (!company) throw new NotFoundError("Company");
+  await assertCompanyAccess(profileId, companyId);
   const sourceUrl = d.sourceUrl ? normalizeUrl(d.sourceUrl) : null;
   if (d.sourceUrl && !sourceUrl) throw new UserError("Source URL must be a valid http(s) URL.");
   if (d.confirmed && !sourceUrl) throw new UserError("Add a source URL before marking research as confirmed for use in emails.");

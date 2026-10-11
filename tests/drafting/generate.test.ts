@@ -77,6 +77,12 @@ describe("draft generation", () => {
     }
   });
 
+  it("forms possessives correctly", () => {
+    const d = generateDraft({ ...base, company: { name: "Example Foods" } });
+    expect(d.body).toContain("Example Foods' ");
+    expect(d.body).not.toContain("Foods's");
+  });
+
   it("uses a generic greeting when the recipient name is unknown", () => {
     const d = generateDraft({ ...base, recipient: { id: "x", fullName: null, title: null, department: null }, template: tpl("NETWORKING") });
     expect(d.body.startsWith("Dear Hiring Team,")).toBe(true);

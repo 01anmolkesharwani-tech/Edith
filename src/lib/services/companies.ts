@@ -216,3 +216,12 @@ export async function addManualJob(companyId: string, input: z.input<typeof jobI
 export async function setJobStatus(jobId: string, status: "OPEN" | "CLOSED" | "UNKNOWN") {
   return db.jobOpportunity.update({ where: { id: jobId }, data: { status } });
 }
+
+/** A profile may modify a shared company only if it tracks it (or has contacts there). */
+export async function assertCompanyAccess(profileId: string, companyId: string) {
+  const [link, contacts] = await Promise.all([
+    db.profileCompany.findUnique({ where: { profileId_companyId: { profileId, companyId } } }),
+    db.contact.count({ where: { profileId, companyId } }),
+  ]);
+  if (!link && !contacts) throw new NotFoundError("Company");
+}

@@ -1,69 +1,90 @@
-import Image from "next/image";
+import Link from "next/link";
+import { Card, fmtDateTime, Notice, PageHeader, Stat } from "@/components/ui";
+import { db } from "@/lib/db";
+import { accountReadiness } from "@/lib/sending/accounts";
+import { getActiveProfile } from "@/lib/session";
+import { dashboardMetrics, recentActivity } from "@/lib/services/dashboard";
 
-export default function Home() {
+export default async function DashboardPage() {
+  const profile = await getActiveProfile();
+  const [m, activity, account, resumeCount, highlightCount] = await Promise.all([
+    dashboardMetrics(profile.id),
+    recentActivity(profile.id),
+    db.emailAccount.findFirst({ where: { profileId: profile.id, isActive: true } }),
+    db.resume.count({ where: { profileId: profile.id } }),
+    db.profileHighlight.count({ where: { profileId: profile.id, confirmed: true } }),
+  ]);
+  const sender = accountReadiness(account);
+  const setup = [
+    { done: !!profile.candidateName, label: "Add the candidate's name and status exactly as on the résumé", href: "/settings#profile" },
+    { done: resumeCount > 0, label: "Upload a PDF résumé", href: "/resumes" },
+    { done: highlightCount > 0, label: "Confirm at least one experience highlight (used to personalise emails)", href: "/resumes#highlights" },
+    { done: m.companiesTargeted > 0, label: "Add or discover target companies", href: "/discover/companies" },
+    { done: sender.ready, label: "Configure a sender account (optional – otherwise draft-only)", href: "/settings#sender" },
+  ];
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="space-y-6">
+      <PageHeader
+        title={`${profile.portalName} dashboard`}
+        description={
+          <>
+            {profile.candidateName ? <strong>{profile.candidateName}</strong> : <em>Candidate name not set</em>}
+            {profile.currentStatus ? ` · ${profile.currentStatus}` : ""}. All figures below are counts of stored records; nothing is estimated.
+          </>
+        }
+      />
+
+      {setup.some((s) => !s.done) ? (
+        <Card title="Set-up checklist">
+          <ul className="space-y-1 text-sm">
+            {setup.map((s) => (
+              <li key={s.label} className="flex items-center gap-2">
+                <span aria-hidden className={s.done ? "text-emerald-600" : "text-slate-400"}>{s.done ? "✓" : "○"}</span>
+                {s.done ? <span className="text-slate-500 line-through">{s.label}</span> : <Link className="text-indigo-700 hover:underline" href={s.href}>{s.label}</Link>}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {m.unknownSends ? (
+        <Notice tone="red">
+          {m.unknownSends} send attempt(s) have an unknown outcome. Check your mail provider&apos;s Sent folder and resolve them in <Link className="underline" href="/drafts">Email Drafts</Link>.
+        </Notice>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <Stat label="Companies researched" value={m.companiesResearched} hint={`${m.companiesTargeted} tracked · ${m.openRoles} open roles observed`} href="/companies" />
+        <Stat label="Relevant contacts" value={m.relevantContacts} hint={`score ≥ 60 of ${m.contactsTotal} contacts`} href="/contacts?minScore=60" />
+        <Stat label="Publicly listed emails" value={m.publiclyListed} hint="exact address seen on a public page" href="/contacts?emailStatus=PUBLICLY_LISTED" />
+        <Stat label="Provider-verified emails" value={m.providerVerified} hint="optional provider result" href="/contacts?emailStatus=PROVIDER_VERIFIED" />
+        <Stat label="Contacts requiring review" value={m.needsReview} href="/contacts?review=NEEDS_REVIEW" tone={m.needsReview ? "warn" : undefined} />
+        <Stat label="Drafts awaiting approval" value={m.draftsAwaiting} href="/drafts" />
+        <Stat label="Emails sent" value={m.emailsSent} hint={`accepted by your mail server · ${m.sent24h}/${m.dailyLimit} in last 24h`} href="/pipeline" />
+        <Stat label="Replies recorded" value={m.repliesInbox + m.repliesManual} hint={`${m.repliesInbox} observed in inbox · ${m.repliesManual} logged manually`} href="/pipeline?stage=REPLIED" />
+        <Stat label="Follow-ups due" value={m.followUpsDue} href="/followups" tone={m.followUpsDue ? "warn" : undefined} />
+        <Stat label="Opportunities identified" value={m.opportunities} hint="meeting, opportunity, referral or application stage" href="/pipeline" />
+      </div>
+
+      <Card title="Recent activity">
+        {activity.length ? (
+          <ul className="divide-y divide-slate-100 text-sm">
+            {activity.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                <span>
+                  <Link className="font-medium text-indigo-700 hover:underline" href={`/contacts/${a.contact.id}`}>{a.contact.fullName}</Link>{" "}
+                  <span className="text-slate-600">— {a.summary}</span>
+                </span>
+                <span className="text-xs text-slate-500">
+                  {a.source.toLowerCase()} · {fmtDateTime(a.occurredAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">No activity yet.</p>
+        )}
+      </Card>
     </div>
   );
 }

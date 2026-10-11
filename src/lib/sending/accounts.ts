@@ -40,6 +40,9 @@ export const PROVIDER_PRESETS = {
   },
 } as const;
 
+const optionalInt = (min: number, max: number) =>
+  z.preprocess((v) => (v === "" || v == null ? null : v), z.coerce.number().int().min(min).max(max).nullable()).optional();
+
 export const accountSchema = z.object({
   label: z.string().trim().min(1).max(80),
   fromName: z.string().trim().min(1).max(120),
@@ -54,8 +57,8 @@ export const accountSchema = z.object({
     .regex(/^[A-Z][A-Z0-9_]{2,63}$/, "Use an UPPER_CASE environment variable name, e.g. CAREERREACH_SMTP_PASS_MARKETING"),
   imapEnabled: z.coerce.boolean().optional(),
   imapHost: z.string().trim().max(200).optional().nullable(),
-  imapPort: z.coerce.number().int().min(1).max(65535).optional().nullable(),
-  providerDailyLimit: z.coerce.number().int().min(1).max(100000).optional().nullable(),
+  imapPort: optionalInt(1, 65535),
+  providerDailyLimit: optionalInt(1, 100000),
 });
 
 export async function saveAccount(profileId: string, input: z.input<typeof accountSchema>, id?: string) {
