@@ -492,6 +492,9 @@ export async function discoverCompanies(
 }
 
 export async function saveDiscoveredCompany(profileId: string, c: WikidataCompany) {
+  // The candidate comes back from the browser: re-validate identifiers before storing them.
+  if (!/^Q\d{1,12}$/.test(c.wikidataId)) throw new UserError("Invalid Wikidata identifier.");
+  c = { ...c, sourceUrl: `https://www.wikidata.org/wiki/${c.wikidataId}`, name: String(c.name).slice(0, 200) };
   const company = await upsertCompany(
     {
       name: c.name,

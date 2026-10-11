@@ -137,6 +137,10 @@ describe("company discovery via Wikidata", () => {
     expect(saved).toMatchObject({ origin: "AUTOMATED", wikidataId: "Q99", domain: "examplebank.test" });
   });
 
+  it("re-validates candidates sent back from the browser", async () => {
+    await expect(saveDiscoveredCompany(w.finance.id, { wikidataId: "javascript:alert(1)", name: "X", description: null, website: null, industry: null, headquarters: null, country: null, employees: null, sourceUrl: "javascript:alert(1)" })).rejects.toThrow(/Invalid/);
+  });
+
   it("reports provider failure without crashing", async () => {
     const { fetcher } = fixtureFetcher({});
     await expect(discoverCompanies(w.finance.id, { name: "Nothing" }, { fetcher })).rejects.toThrow(/Wikidata lookup failed/);
