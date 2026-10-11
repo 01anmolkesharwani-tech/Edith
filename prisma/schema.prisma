@@ -1,0 +1,765 @@
+// CareerReach database schema (SQLite via Prisma ORM 7 + better-sqlite3 driver adapter).
+//
+// Separation rules:
+// - Candidate data (profiles, résumés, contacts, drafts, sends, follow-ups) is always
+//   owned by exactly one CandidateProfile.
+// - Company facts, job openings, fetched source documents and company research may be
+//   shared between profiles; each profile links to companies via ProfileCompany.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum HighlightKind {
+  EDUCATION
+  EXPERIENCE
+  PROJECT
+  ACHIEVEMENT
+  CERTIFICATION
+  SKILL
+  OTHER
+}
+
+enum TargetStatus {
+  TARGET
+  WATCHING
+  EXCLUDED
+}
+
+enum TargetType {
+  OPEN_ROLE // at least one relevant opening was observed
+  SPECULATIVE // networking target – no vacancy observed
+}
+
+enum RecordOrigin {
+  AUTOMATED
+  MANUAL
+  IMPORTED
+}
+
+enum ReviewState {
+  UNREVIEWED
+  CONFIRMED
+  NEEDS_REVIEW
+}
+
+enum OutreachStage {
+  NEW
+  RESEARCH_NEEDED
+  READY_TO_CONTACT
+  DRAFT_PREPARED
+  SENT
+  FOLLOW_UP_DUE
+  REPLIED
+  MEETING_SCHEDULED
+  OPPORTUNITY_IDENTIFIED
+  REFERRED
+  APPLIED
+  REJECTED
+  NOT_RELEVANT
+  DO_NOT_CONTACT
+}
+
+enum EmailStatus {
+  NOT_CHECKED
+  PUBLICLY_LISTED
+  SYNTAX_VALID
+  DOMAIN_CONFIGURED
+  PROVIDER_VERIFIED
+  UNCERTAIN
+  UNDELIVERABLE
+  CATCH_ALL_RISKY
+  STALE
+}
+
+enum EmailOrigin {
+  PUBLIC_SOURCE // exact address observed on a public page
+  USER_PROVIDED
+  IMPORTED
+  PATTERN_GUESS // inferred from a naming pattern – never verified by itself
+}
+
+enum PhoneType {
+  DIRECT_BUSINESS_LINE
+  OFFICE_LINE
+  COMPANY_SWITCHBOARD
+  PUBLIC_PROFESSIONAL_MOBILE
+  UNKNOWN
+}
+
+enum ContactField {
+  NAME
+  TITLE
+  COMPANY
+  DEPARTMENT
+  LOCATION
+  EMAIL
+  PHONE
+  PROFILE_URL
+  BIO_URL
+}
+
+enum SourceType {
+  OFFICIAL_TEAM_PAGE
+  OFFICIAL_BIO
+  OFFICIAL_ANNOUNCEMENT
+  CAREERS_PAGE
+  JOB_POSTING
+  PUBLIC_DIRECTORY
+  PROFESSIONAL_PROFILE
+  NEWS_ARTICLE
+  SEARCH_API_RESULT
+  USER_PROVIDED
+  CSV_IMPORT
+  OTHER
+}
+
+enum VerificationMethod {
+  AUTOMATED_EXTRACTION
+  EXACT_MATCH_ON_PAGE
+  MANUAL_ENTRY
+  USER_CONFIRMED
+  IMPORT
+  PROVIDER_CHECK
+}
+
+enum Confidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum VerificationStage {
+  SYNTAX
+  DOMAIN
+  MX
+  PUBLIC_MATCH
+  PROVIDER
+  SMTP_DIAGNOSTIC
+}
+
+enum VerificationResult {
+  PASS
+  FAIL
+  INCONCLUSIVE
+  CATCH_ALL
+  ERROR
+  SKIPPED
+}
+
+enum DraftKind {
+  INITIAL
+  FOLLOW_UP
+}
+
+enum SendState {
+  DRAFT
+  SENDING
+  SENT
+  FAILED
+  UNKNOWN // provider outcome could not be determined – never auto-retried
+  CANCELLED
+}
+
+enum SendStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  FAILED
+  UNKNOWN
+}
+
+enum EventSource {
+  PROVIDER // confirmed by the sending provider
+  INBOX // observed in an authorised mailbox
+  MANUAL // recorded by the user
+  SYSTEM
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  DRAFTED
+  SENT
+  SKIPPED
+  SUPPRESSED
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+  UNKNOWN
+}
+
+enum ResearchKind {
+  DESCRIPTION
+  BUSINESS_MODEL
+  PRODUCT_OR_SERVICE
+  BUSINESS_UNIT
+  STRATEGIC_PRIORITY
+  GROWTH_INITIATIVE
+  NEWS
+  RECIPIENT_BACKGROUND
+  OTHER
+}
+
+// ---------------------------------------------------------------------------
+// Candidate profiles
+// ---------------------------------------------------------------------------
+
+model CandidateProfile {
+  id                String  @id @default(cuid())
+  slug              String  @unique
+  portalName        String // e.g. "Marketing", "Finance"
+  candidateName     String? // taken from the candidate's own résumé – never invented
+  currentStatus     String? // verified education / professional status line
+  education         String?
+  careerObjective   String?
+  signature         String? // contact lines appended to emails (user-provided)
+  // JSON string arrays
+  skills            String  @default("[]")
+  targetRoles       String  @default("[]")
+  targetIndustries  String  @default("[]")
+  targetFunctions   String  @default("[]") // keywords describing relevant functions
+  targetContactTitles String @default("[]")
+  preferredLocations String @default("[]")
+  // Preferences
+  dailySendLimit          Int @default(15)
+  followUpAfterDays       Int @default(7)
+  maxFollowUps            Int @default(1)
+  failedSendCooldownMinutes Int @default(30)
+  accentColor       String  @default("indigo")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  highlights        ProfileHighlight[]
+  resumes           Resume[]
+  companies         ProfileCompany[]
+  contacts          Contact[]
+  savedSearches     SavedSearch[]
+  searchHistory     SearchHistory[]
+  templates         OutreachTemplate[]
+  emailAccounts     EmailAccount[]
+  drafts            EmailDraft[]
+  activities        OutreachActivity[]
+  sendLogs          EmailSendLog[]
+  followUps         FollowUp[]
+  suppressions      SuppressionRecord[]
+  researchItems     ResearchItem[]
+}
+
+/// A verified fact about the candidate (experience, project, achievement…).
+/// Only `confirmed` highlights are used when drafting emails.
+model ProfileHighlight {
+  id           String        @id @default(cuid())
+  profileId    String
+  profile      CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kind         HighlightKind
+  title        String
+  organization String?
+  summary      String?
+  capabilities String        @default("[]") // JSON string array
+  tags         String        @default("[]") // JSON string array (e.g. "brand", "valuation")
+  confirmed    Boolean       @default(false)
+  source       String? // "resume:<id>" or "manual"
+  sortOrder    Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([profileId])
+}
+
+model Resume {
+  id               String   @id @default(cuid())
+  profileId        String
+  profile          CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  label            String // General, Marketing, Finance, Valuation…
+  originalFilename String
+  storedFilename   String   @unique
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  isDefault        Boolean  @default(false)
+  extractedText    String?
+  uploadedAt       DateTime @default(now())
+
+  drafts           EmailDraft[]
+  sendLogs         EmailSendLog[]
+
+  @@index([profileId])
+}
+
+// ---------------------------------------------------------------------------
+// Companies, jobs, research (shareable)
+// ---------------------------------------------------------------------------
+
+model Company {
+  id               String   @id @default(cuid())
+  name             String
+  normalizedName   String
+  domain           String?  @unique
+  website          String?
+  careersUrl       String?
+  leadershipUrl    String?
+  industry         String?
+  headquarters     String?
+  sizeRange        String?
+  businessModel    String?
+  description      String?
+  descriptionSourceUrl String?
+  wikidataId       String?  @unique
+  atsProvider      String? // GREENHOUSE | LEVER | ASHBY
+  atsSlug          String?
+  origin           RecordOrigin @default(MANUAL)
+  sourceUrls       String   @default("[]") // JSON array of {url, retrievedAt}
+  lastResearchedAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  profileLinks     ProfileCompany[]
+  jobs             JobOpportunity[]
+  contacts         Contact[]
+  channels         CompanyChannel[]
+  documents        SourceDocument[]
+  researchItems    ResearchItem[]
+  drafts           EmailDraft[]
+
+  @@index([normalizedName])
+}
+
+model ProfileCompany {
+  id         String   @id @default(cuid())
+  profileId  String
+  profile    CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status     TargetStatus @default(TARGET)
+  targetType TargetType   @default(SPECULATIVE)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([profileId, companyId])
+  @@index([companyId])
+}
+
+/// Company-level public channels (careers inbox, switchboard). Never attributed to a person.
+model CompanyChannel {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind       String // EMAIL | PHONE
+  value      String
+  label      String?
+  phoneType  PhoneType?
+  sourceUrl  String?
+  observedAt DateTime @default(now())
+
+  @@unique([companyId, kind, value])
+}
+
+/// A fetched public page, kept as the original evidence for extracted values.
+model SourceDocument {
+  id          String   @id @default(cuid())
+  url         String
+  finalUrl    String
+  domain      String
+  title       String?
+  httpStatus  Int
+  contentHash String
+  textExcerpt String? // normalised visible text (truncated)
+  publishedAt DateTime?
+  retrievedAt DateTime @default(now())
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  evidence    ContactFieldEvidence[]
+  research    ResearchItem[]
+
+  @@index([finalUrl])
+  @@index([companyId])
+}
+
+model JobOpportunity {
+  id                 String    @id @default(cuid())
+  companyId          String
+  company            Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title              String
+  department         String?
+  location           String?
+  url                String?
+  source             String // GREENHOUSE | LEVER | ASHBY | WEBSITE | MANUAL
+  externalId         String?
+  descriptionExcerpt String?
+  postedAt           DateTime?
+  retrievedAt        DateTime  @default(now())
+  lastSeenAt         DateTime  @default(now())
+  status             JobStatus @default(OPEN)
+  createdAt          DateTime  @default(now())
+
+  drafts             EmailDraft[]
+
+  @@unique([source, externalId])
+  @@index([companyId])
+}
+
+model ResearchItem {
+  id               String       @id @default(cuid())
+  companyId        String
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  profileId        String? // null = shared company research
+  profile          CandidateProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contactId        String? // set for recipient background research
+  contact          Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  kind             ResearchKind
+  statement        String // short factual statement written/confirmed by the user
+  quote            String? // exact supporting text from the source
+  sourceUrl        String?
+  sourceDocumentId String?
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  publishedAt      DateTime?
+  retrievedAt      DateTime     @default(now())
+  confirmed        Boolean      @default(false) // reviewed and allowed in emails
+  origin           RecordOrigin @default(MANUAL)
+  createdAt        DateTime     @default(now())
+
+  @@index([companyId])
+  @@index([contactId])
+}
+
+// ---------------------------------------------------------------------------
+// Contacts and evidence (per profile)
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id                 String   @id @default(cuid())
+  profileId          String
+  profile            CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  fullName           String
+  normalizedName     String
+  title              String?
+  department         String?
+  seniority          String? // INTERN | JUNIOR | MID | SENIOR | LEADER | EXECUTIVE | UNKNOWN
+  location           String?
+  profileUrl         String?
+  bioUrl             String?
+  email              String?
+  emailNormalized    String?
+  emailOrigin        EmailOrigin?
+  emailStatus        EmailStatus @default(NOT_CHECKED)
+  emailCheckedAt     DateTime?
+  phone              String?
+  phoneType          PhoneType?
+  origin             RecordOrigin @default(MANUAL)
+  reviewState        ReviewState  @default(UNREVIEWED)
+  reviewReasons      String   @default("[]") // JSON array of strings (conflicts etc.)
+  stage              OutreachStage @default(NEW)
+  relevanceScore     Int?
+  relevanceBreakdown String? // JSON
+  roleConfirmedAt    DateTime?
+  emailLastObservedAt DateTime?
+  phoneLastObservedAt DateTime?
+  lastObservedAt     DateTime?
+  notes              String?
+  mergedIntoId       String? // tombstone pointer after a merge
+  discoveredAt       DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  evidence           ContactFieldEvidence[]
+  verifications      EmailVerification[]
+  drafts             EmailDraft[]
+  activities         OutreachActivity[]
+  sendLogs           EmailSendLog[]
+  followUps          FollowUp[]
+  researchItems      ResearchItem[]
+
+  @@index([profileId, stage])
+  @@index([profileId, emailNormalized])
+  @@index([profileId, normalizedName])
+  @@index([companyId])
+}
+
+model ContactFieldEvidence {
+  id                 String   @id @default(cuid())
+  contactId          String
+  contact            Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  field              ContactField
+  value              String
+  sourceUrl          String?
+  sourceType         SourceType
+  sourceDocumentId   String?
+  sourceDocument     SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  observedAt         DateTime @default(now())
+  publishedAt        DateTime?
+  verificationMethod VerificationMethod
+  confidence         Confidence
+  snippet            String? // exact surrounding text from the source
+  notes              String?
+  origin             RecordOrigin
+  createdAt          DateTime @default(now())
+
+  @@index([contactId, field])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email     String
+  stage     VerificationStage
+  result    VerificationResult
+  provider  String?
+  details   String?
+  checkedAt DateTime @default(now())
+
+  @@index([contactId, email])
+}
+
+// ---------------------------------------------------------------------------
+// Searches
+// ---------------------------------------------------------------------------
+
+model SavedSearch {
+  id         String   @id @default(cuid())
+  profileId  String
+  profile    CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kind       String // COMPANY | CONTACT
+  name       String
+  params     String // JSON
+  createdAt  DateTime @default(now())
+
+  @@index([profileId])
+}
+
+model SearchHistory {
+  id           String   @id @default(cuid())
+  profileId    String
+  profile      CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kind         String
+  provider     String
+  query        String
+  params       String?
+  resultCount  Int      @default(0)
+  status       String // OK | ERROR | UNAVAILABLE | RATE_LIMITED
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([profileId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Outreach
+// ---------------------------------------------------------------------------
+
+model OutreachTemplate {
+  id               String   @id @default(cuid())
+  profileId        String
+  profile          CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name             String
+  recipientType    String // RECRUITER | FUNCTIONAL_LEADER | BUSINESS_HEAD | JUNIOR | SENIOR | OPEN_ROLE | NETWORKING | FOLLOW_UP
+  subjectTemplates String // JSON array
+  bodyTemplate     String
+  isBuiltIn        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  drafts           EmailDraft[]
+
+  @@unique([profileId, name])
+}
+
+/// Sender account. Secrets are NEVER stored here: `secretEnvVar` names the environment
+/// variable that holds the SMTP/IMAP app password on the server.
+model EmailAccount {
+  id           String   @id @default(cuid())
+  profileId    String
+  profile      CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  label        String
+  provider     String // SMTP | MOCK
+  fromName     String
+  fromAddress  String
+  smtpHost     String?
+  smtpPort     Int?
+  smtpSecure   Boolean  @default(false)
+  smtpUser     String?
+  secretEnvVar String?
+  imapEnabled  Boolean  @default(false)
+  imapHost     String?
+  imapPort     Int?
+  providerDailyLimit Int? // documented provider limit, informational
+  isActive     Boolean  @default(true)
+  lastTestAt   DateTime?
+  lastTestResult String?
+  lastReplySyncAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sendLogs     EmailSendLog[]
+
+  @@unique([profileId, fromAddress])
+}
+
+model EmailDraft {
+  id                 String     @id @default(cuid())
+  profileId          String
+  profile            CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contactId          String
+  contact            Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  opportunityId      String?
+  opportunity        JobOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  resumeId           String?
+  resume             Resume?    @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  templateId         String?
+  template           OutreachTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  kind               DraftKind  @default(INITIAL)
+  recipientType      String?
+  recipientEmail     String?
+  recipientName      String?
+  subject            String
+  subjectAlternatives String    @default("[]")
+  body               String
+  personalization    String     @default("{}") // JSON: facts used, gaps, sources
+  contentHash        String
+  reviewedHash       String? // contentHash at the time the user marked it reviewed
+  reviewedAt         DateTime?
+  guessAcknowledged  Boolean    @default(false)
+  duplicateAcknowledged Boolean @default(false)
+  sendState          SendState  @default(DRAFT)
+  idempotencyKey     String     @unique
+  inReplyToMessageId String?
+  sentAt             DateTime?
+  providerMessageId  String?
+  lastError          String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  sendLogs           EmailSendLog[]
+  followUp           FollowUp?  @relation("FollowUpDraft")
+
+  @@index([profileId, sendState])
+  @@index([contactId])
+}
+
+model OutreachActivity {
+  id         String      @id @default(cuid())
+  profileId  String
+  profile    CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type       String // STAGE_CHANGE | DRAFT_CREATED | EMAIL_SENT | SEND_FAILED | REPLY | BOUNCE | NOTE | FOLLOW_UP | MERGE | IMPORT | VERIFY | DISCOVERED
+  source     EventSource @default(SYSTEM)
+  summary    String
+  details    String?
+  fromStage  OutreachStage?
+  toStage    OutreachStage?
+  draftId    String?
+  sendLogId  String?
+  occurredAt DateTime    @default(now())
+
+  @@index([profileId, occurredAt])
+  @@index([contactId])
+}
+
+model EmailSendLog {
+  id                 String     @id @default(cuid())
+  profileId          String
+  profile            CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  draftId            String
+  draft              EmailDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  contactId          String
+  contact            Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  emailAccountId     String?
+  emailAccount       EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  idempotencyKey     String     @unique
+  provider           String
+  fromAddress        String
+  toAddress          String
+  subject            String
+  bodySnapshot       String
+  attachmentResumeId String?
+  attachmentResume   Resume?    @relation(fields: [attachmentResumeId], references: [id], onDelete: SetNull)
+  attachmentFilename String?
+  attachmentSha256   String?
+  status             SendStatus @default(PENDING)
+  providerMessageId  String?
+  providerResponse   String?
+  errorMessage       String?
+  attemptedAt        DateTime   @default(now())
+  completedAt        DateTime?
+  bounceSource       EventSource?
+  bouncedAt          DateTime?
+  bounceDetails      String?
+  replySource        EventSource?
+  repliedAt          DateTime?
+  replySnippet       String?
+
+  followUps          FollowUp[]
+
+  @@index([profileId, attemptedAt])
+  @@index([contactId])
+  @@index([toAddress])
+}
+
+model FollowUp {
+  id              String         @id @default(cuid())
+  profileId       String
+  profile         CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contactId       String
+  contact         Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  previousSendId  String?
+  previousSend    EmailSendLog?  @relation(fields: [previousSendId], references: [id], onDelete: SetNull)
+  sequence        Int            @default(1)
+  dueDate         DateTime
+  status          FollowUpStatus @default(SCHEDULED)
+  suppressedReason String?
+  draftId         String?        @unique
+  draft           EmailDraft?    @relation("FollowUpDraft", fields: [draftId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([profileId, status, dueDate])
+}
+
+/// Do Not Contact list. profileId null = applies to both profiles.
+model SuppressionRecord {
+  id        String   @id @default(cuid())
+  profileId String?
+  profile   CandidateProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  email     String? // normalised address
+  domain    String? // whole-domain suppression
+  contactId String?
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([domain])
+}
+
+/// Singleton (id = 1) application-wide settings.
+model ApplicationSettings {
+  id                         Int      @id @default(1)
+  userAgentContact           String? // contact URL/email included in the crawler User-Agent
+  requestDelayMs             Int      @default(1500)
+  maxPagesPerSite            Int      @default(8)
+  fetchTimeoutMs             Int      @default(12000)
+  maxResponseBytes           Int      @default(2000000)
+  searchHistoryRetentionDays Int      @default(180)
+  sourceDocumentRetentionDays Int     @default(365)
+  smtpDiagnosticsEnabled     Boolean  @default(false)
+  wikidataEnabled            Boolean  @default(true)
+  jobBoardsEnabled           Boolean  @default(true)
+  websiteResearchEnabled     Boolean  @default(true)
+  updatedAt                  DateTime @updatedAt
+}
